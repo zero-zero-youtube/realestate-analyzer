@@ -176,6 +176,140 @@ function CfTooltip({ active, payload }: { active?:boolean; payload?:{value:numbe
   );
 }
 
+// ---- AI診断レポート ----
+type DiagLevel = "good" | "warn" | "danger";
+
+interface DiagItem {
+  icon: string;
+  label: string;
+  level: DiagLevel;
+  text: string;
+}
+
+function diagColors(level: DiagLevel) {
+  if (level === "good")   return { border: "border-emerald-500/40", bg: "bg-emerald-500/10", badge: "bg-emerald-500/20 text-emerald-300", icon: "text-emerald-400" };
+  if (level === "warn")   return { border: "border-amber-500/40",   bg: "bg-amber-500/10",   badge: "bg-amber-500/20 text-amber-300",   icon: "text-amber-400" };
+  return                         { border: "border-red-500/40",     bg: "bg-red-500/10",     badge: "bg-red-500/20 text-red-300",     icon: "text-red-400" };
+}
+
+function buildDiagnosis(input: PropertyInput, result: AnalysisResult): { items: DiagItem[]; summary: string } {
+  const items: DiagItem[] = [];
+  const ltv = input.propertyPrice > 0 ? (input.loanAmount / input.propertyPrice) * 100 : 0;
+  const equity = (input.propertyPrice - input.loanAmount) * 10000;
+  const roi = equity > 0 ? (result.annualCashFlow / equity) * 100 : 0;
+
+  // CF判定
+  if (result.monthlyCashFlow >= 30000) {
+    items.push({ icon: "💰", label: "キャッシュフロー", level: "good",
+      text: "月間キャッシュフローが3万円以上あり、安定した収益が見込めます。空室が1〜2ヶ月続いても耐えられる水準です。" });
+  } else if (result.monthlyCashFlow >= 0) {
+    items.push({ icon: "💰", label: "キャッシュフロー", level: "warn",
+      text: "キャッシュフローはプラスですが余裕が少ない状態です。修繕費や空室リスクに備えて資金を確保しておきましょう。" });
+  } else {
+    items.push({ icon: "💰", label: "キャッシュフロー", level: "danger",
+      text: "ローン返済が家賃収入を上回っています。頭金を増やすか、物件価格の再交渉を検討してください。" });
+  }
+
+  // 利回り判定
+  if (result.grossYield >= 8) {
+    items.push({ icon: "📊", label: "表面利回り", level: "good",
+      text: "表面利回りが8%以上あり、収益性の高い物件です。ただし実質利回りと管理費も必ず確認しましょう。" });
+  } else if (result.grossYield >= 5) {
+    items.push({ icon: "📊", label: "表面利回り", level: "warn",
+      text: "利回りは標準的な水準です。エリアの空室率と将来の資産価値も考慮して判断しましょう。" });
+  } else {
+    items.push({ icon: "📊", label: "表面利回り", level: "danger",
+      text: "利回りが低水準です。キャピタルゲイン（売却益）を見込めるエリアかどうか確認が必要です。" });
+  }
+
+  // LTV判定
+  if (ltv <= 70) {
+    items.push({ icon: "🏦", label: "LTV（借入比率）", level: "good",
+      text: "借入比率が低く、金利上昇リスクに強い安全な水準です。" });
+  } else if (ltv <= 90) {
+    items.push({ icon: "🏦", label: "LTV（借入比率）", level: "warn",
+      text: "借入比率はやや高めです。金利が1%上昇した場合のシミュレーションも確認しましょう。" });
+  } else {
+    items.push({ icon: "🏦", label: "LTV（借入比率）", level: "danger",
+      text: "借入比率が非常に高い状態です。金利上昇や空室発生時のリスクを十分に理解した上で判断してください。" });
+  }
+
+  // ROI判定
+  if (equity <= 0) {
+    items.push({ icon: "📈", label: "ROI（自己資金利回り）", level: "warn",
+      text: "自己資金がほぼゼロのフルローンです。レバレッジ効果は最大ですが、リスクも最大となります。" });
+  } else if (roi >= 10) {
+    items.push({ icon: "📈", label: "ROI（自己資金利回り）", level: "good",
+      text: "自己資金に対するリターンが高く、レバレッジが効いた投資です。" });
+  } else if (roi >= 5) {
+    items.push({ icon: "📈", label: "ROI（自己資金利回り）", level: "warn",
+      text: "自己資金に対するリターンは標準的な水準です。" });
+  } else {
+    items.push({ icon: "📈", label: "ROI（自己資金利回り）", level: "danger",
+      text: "自己資金に対するリターンが低い状態です。他の投資先と比較検討することをお勧めします。" });
+  }
+
+  // 総合アドバイス
+  const goodCount = items.filter(i => i.level === "good").length;
+  const dangerCount = items.filter(i => i.level === "danger").length;
+  let summary = "";
+  if (dangerCount === 0 && goodCount >= 3) {
+    summary = "全体的に非常にバランスの取れた物件です。長期保有を視野に入れた資産形成に向いています。";
+  } else if (dangerCount === 0) {
+    summary = "問題点は少なく、条件次第では検討に値する物件です。空室率とエリアの将来性を最終確認しましょう。";
+  } else if (dangerCount === 1) {
+    summary = "一部に要注意ポイントがあります。リスク要因を把握した上で、許容できるか慎重に判断してください。";
+  } else {
+    summary = "複数の指標で懸念点があります。条件の見直しや他の物件との比較を強くお勧めします。";
+  }
+
+  return { items, summary };
+}
+
+function AIDiagnosis({ input, result }: { input: PropertyInput; result: AnalysisResult }) {
+  const { items, summary } = buildDiagnosis(input, result);
+  return (
+    <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base">🤖</span>
+        <h3 className="text-sm font-bold text-white">AI診断レポート</h3>
+        <span className="ml-auto text-xs bg-blue-500/20 border border-blue-400/30 text-blue-300 px-2 py-0.5 rounded-full">ルールベース</span>
+      </div>
+      <p className="text-xs text-slate-500 mb-5">入力値をもとに自動生成された診断結果です。</p>
+
+      <div className="space-y-3">
+        {items.map((item) => {
+          const c = diagColors(item.level);
+          return (
+            <div key={item.label} className={`border ${c.border} ${c.bg} rounded-xl p-4 flex gap-3`}>
+              <span className={`text-xl flex-shrink-0 mt-0.5 ${c.icon}`}>{item.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-semibold text-slate-300">{item.label}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${c.badge}`}>
+                    {item.level === "good" ? "良好" : item.level === "warn" ? "注意" : "危険"}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-300 leading-relaxed">{item.text}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 総合アドバイス */}
+      <div className="mt-4 bg-blue-500/10 border border-blue-400/20 rounded-xl p-4">
+        <div className="text-xs font-semibold text-blue-300 mb-1">💡 総合アドバイス</div>
+        <p className="text-sm text-slate-300 leading-relaxed">{summary}</p>
+      </div>
+
+      <p className="mt-4 text-xs text-slate-600 text-center">
+        ⚠️ 本診断は参考情報です。投資判断はご自身の責任で行ってください。
+      </p>
+    </section>
+  );
+}
+
 // ---- 保存セクション ----
 function SaveSection({
   savedCount, onSave,
@@ -656,6 +790,9 @@ export default function AnalyzePage() {
                 ))}
               </ul>
             </section>
+
+            {/* AI診断レポート */}
+            <AIDiagnosis input={input} result={result}/>
 
             {/* 保存セクション */}
             <SaveSection
