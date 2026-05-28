@@ -9,6 +9,8 @@ import {
 import { analyze, type PropertyInput, type AnalysisResult } from "@/lib/calculator";
 import { useSavedProperties } from "@/lib/useSavedProperties";
 import Header from "@/components/Header";
+import { useAuth, getDailyUsage, incrementDailyUsage, isLimitReached } from "@/lib/useAuth";
+import { useAnalyses } from "@/lib/useAnalyses";
 
 const defaultInput: PropertyInput = {
   propertyPrice: 2000,
@@ -559,7 +561,17 @@ function ShareSection({ result }: { result: AnalysisResult }) {
 export default function AnalyzePage() {
   const [input, setInput] = useState<PropertyInput>(defaultInput);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [limitReached, setLimitReached] = useState(false);
+  const [dailyCount, setDailyCount] = useState(0);
   const { add, count } = useSavedProperties();
+  const { user } = useAuth();
+  const { save: saveToDb } = useAnalyses(user);
+
+  // 初期化時に今日の利用回数を反映
+  useState(() => {
+    setDailyCount(getDailyUsage().count);
+    setLimitReached(!user && isLimitReached());
+  });
 
   function set<K extends keyof PropertyInput>(key: K) {
     return (v: number) => setInput((prev) => ({ ...prev, [key]: v }));
@@ -572,7 +584,19 @@ export default function AnalyzePage() {
   }
 
   function handleAnalyze() {
-    setResult(analyze(input));
+    // 未ログインの場合は1日3件制限
+    if (!user && isLimitReached()) {
+      setLimitReached(true);
+      return;
+    }
+    const r = analyze(input);
+    setResult(r);
+    if (!user) {
+      incrementDailyUsage();
+      const { count: c } = getDailyUsage();
+      setDailyCount(c);
+      setLimitReached(isLimitReached());
+    }
     setTimeout(() => document.getElementById("result")?.scrollIntoView({ behavior:"smooth" }), 100);
   }
   function handleReset() { setInput(defaultInput); setResult(null); }
@@ -672,10 +696,29 @@ export default function AnalyzePage() {
             </div>
           </div>
 
+          {/* 利用制限バナー（未ログイン） */}
+          {!user && (
+            <div className={`rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3 ${
+              limitReached
+                ? "bg-red-500/10 border border-red-400/30"
+                : "bg-white/5 border border-white/10"
+            }`}>
+              <span className={limitReached ? "text-red-300" : "text-slate-400"}>
+                {limitReached
+                  ? "⚠️ 本日の無料利用（3件）に達しました。ログインすると無制限で使えます。"
+                  : `本日の利用：${dailyCount} / 3件（未ログイン）`}
+              </span>
+              <Link href="/login"
+                className="flex-shrink-0 text-xs bg-blue-500 hover:bg-blue-400 text-white font-bold px-3 py-1.5 rounded-lg transition-colors">
+                ログイン
+              </Link>
+            </div>
+          )}
+
           {/* ボタン */}
           <div className="flex gap-3 pt-2">
-            <button onClick={handleAnalyze}
-              className="flex-1 bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white font-bold py-3.5 rounded-xl transition-colors text-base shadow-lg shadow-blue-500/20">
+            <button onClick={handleAnalyze} disabled={!user && limitReached}
+              className="flex-1 bg-blue-500 hover:bg-blue-400 active:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-colors text-base shadow-lg shadow-blue-500/20">
               📊 分析する
             </button>
             <button onClick={handleReset}
@@ -780,7 +823,12 @@ export default function AnalyzePage() {
             {/* 保存セクション */}
             <SaveSection
               savedCount={count}
-              onSave={(name) => add(name, input, result)}/>
+              onSave={async (name) => {
+                // localStorageに保存（従来）
+                add(name, input, result);
+                // ログイン済みならDBにも保存
+                if (user) await saveToDb(name, input, result);
+              }}/>
 
             {/* 金利シミュレーション */}
             <RateSimulation input={input}/>

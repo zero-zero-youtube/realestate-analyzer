@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSavedProperties } from "@/lib/useSavedProperties";
 import Header from "@/components/Header";
+import { useAuth } from "@/lib/useAuth";
+import { useAnalyses } from "@/lib/useAnalyses";
+import type { AnalysisResult } from "@/lib/calculator";
 
 function formatYen(v: number) {
   return new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(v)));
@@ -16,13 +19,33 @@ const verdictConfig = {
   pass:      { text: "text-red-400",     label: "見送り",   icon: "❌" },
 };
 
+// DB物件をSavedProperty互換の形に整形
+function toDisplayItem(a: { id: string; name: string; created_at: string; input: Record<string, number>; result: Record<string, unknown> }) {
+  return {
+    id: a.id,
+    name: a.name,
+    savedAt: new Date(a.created_at).toLocaleDateString("ja-JP"),
+    input: a.input as unknown as import("@/lib/calculator").PropertyInput,
+    result: a.result as unknown as AnalysisResult,
+    source: "db" as const,
+  };
+}
+
 export default function SavedPage() {
-  const { items, remove } = useSavedProperties();
+  const { user } = useAuth();
+  const { items: localItems, remove: removeLocal } = useSavedProperties();
+  const { items: dbItems, loading: dbLoading, remove: removeFromDb } = useAnalyses(user);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
-  function handleRemove(id: string) {
+  // ログイン時はDB優先、未ログインはlocalStorage
+  const displayItems = user
+    ? dbItems.map(toDisplayItem)
+    : localItems.map(i => ({ ...i, source: "local" as const }));
+
+  function handleRemove(id: string, source: "db" | "local") {
     if (confirmId === id) {
-      remove(id);
+      if (source === "db") removeFromDb(id);
+      else removeLocal(id);
       setConfirmId(null);
     } else {
       setConfirmId(id);
@@ -38,13 +61,26 @@ export default function SavedPage() {
         {/* タイトル */}
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">保存済み物件</h1>
-          <p className="text-slate-400 text-sm">
-            {items.length > 0 ? `${items.length}件 / 最大10件` : "保存された物件はありません"}
+          <p className="text-slate-400 text-sm flex items-center gap-2">
+            {user
+              ? <><span className="text-emerald-400 text-xs">●</span> クラウド保存（{displayItems.length}件）</>
+              : <><span className="text-slate-500 text-xs">●</span> ローカル保存（{displayItems.length}件 / 最大10件）</>
+            }
           </p>
+          {!user && (
+            <p className="text-xs text-blue-400 mt-1">
+              <Link href="/login" className="underline hover:no-underline">ログインするとクラウドに保存</Link>されどこでも参照できます
+            </p>
+          )}
         </div>
 
+        {/* ローディング（DB取得中） */}
+        {user && dbLoading && (
+          <div className="text-center py-12 text-slate-400 text-sm">読み込み中...</div>
+        )}
+
         {/* 空状態 */}
-        {items.length === 0 && (
+        {!dbLoading && displayItems.length === 0 && (
           <div className="bg-white/5 border border-white/10 rounded-2xl px-8 py-16 text-center">
             <div className="w-20 h-20 bg-blue-500/10 border border-blue-400/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <span className="text-4xl">🏠</span>
@@ -64,7 +100,7 @@ export default function SavedPage() {
         )}
 
         {/* 物件一覧 */}
-        {items.length > 0 && (
+        {!dbLoading && displayItems.length > 0 && (
           <div className="space-y-4">
             {/* テーブルヘッダー（デスクトップ） */}
             <div className="hidden sm:grid grid-cols-7 gap-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -76,7 +112,7 @@ export default function SavedPage() {
               <div/>
             </div>
 
-            {items.map((p) => {
+            {displayItems.map((p) => {
               const vc = verdictConfig[p.result.verdict];
               const cfPlus = p.result.monthlyCashFlow >= 0;
               return (
@@ -113,7 +149,7 @@ export default function SavedPage() {
                         <span className="text-xs text-slate-400">スコア</span>
                         <span className={`text-xl font-bold ${vc.text}`}>{p.result.score}点</span>
                       </div>
-                      <button onClick={() => handleRemove(p.id)}
+                      <button onClick={() => handleRemove(p.id, p.source)}
                         className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                           confirmId === p.id
                             ? "bg-red-500/20 border-red-400/40 text-red-300"
@@ -143,7 +179,7 @@ export default function SavedPage() {
                       {p.result.score}点
                     </div>
                     <div className="flex justify-end">
-                      <button onClick={() => handleRemove(p.id)}
+                      <button onClick={() => handleRemove(p.id, p.source)}
                         className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                           confirmId === p.id
                             ? "bg-red-500/20 border-red-400/40 text-red-300"
@@ -160,15 +196,15 @@ export default function SavedPage() {
         )}
 
         {/* 比較サマリー（2件以上の場合） */}
-        {items.length >= 2 && (
+        {displayItems.length >= 2 && (
           <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6">
             <h2 className="text-sm font-bold text-white mb-4">📊 保存物件の比較サマリー</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: "最高スコア", value: `${Math.max(...items.map(p => p.result.score))}点`, color: "text-emerald-400" },
-                { label: "最高利回り", value: `${Math.max(...items.map(p => p.result.grossYield)).toFixed(1)}%`, color: "text-blue-400" },
-                { label: "最高CF（月間）", value: `+${formatYen(Math.max(...items.map(p => p.result.monthlyCashFlow)))}円`, color: "text-amber-400" },
-                { label: "保存件数", value: `${items.length} / 10件`, color: "text-slate-300" },
+                { label: "最高スコア", value: `${Math.max(...displayItems.map(p => p.result.score))}点`, color: "text-emerald-400" },
+                { label: "最高利回り", value: `${Math.max(...displayItems.map(p => p.result.grossYield)).toFixed(1)}%`, color: "text-blue-400" },
+                { label: "最高CF（月間）", value: `+${formatYen(Math.max(...displayItems.map(p => p.result.monthlyCashFlow)))}円`, color: "text-amber-400" },
+                { label: "保存件数", value: `${displayItems.length}件`, color: "text-slate-300" },
               ].map((s) => (
                 <div key={s.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
                   <div className="text-xs text-slate-400 mb-1">{s.label}</div>
