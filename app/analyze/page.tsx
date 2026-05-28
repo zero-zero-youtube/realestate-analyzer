@@ -137,12 +137,6 @@ export default function AnalyzePage() {
     setResult(null);
   }
 
-  const cfColor =
-    result === null
-      ? ""
-      : result.monthlyCashFlow >= 0
-      ? "text-emerald-600"
-      : "text-red-600";
 
   return (
     <div className="min-h-screen bg-gray-50">
