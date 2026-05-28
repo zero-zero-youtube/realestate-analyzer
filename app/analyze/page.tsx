@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer,
 } from "recharts";
 import { analyze, type PropertyInput, type AnalysisResult } from "@/lib/calculator";
+import { useSavedProperties } from "@/lib/useSavedProperties";
 
 const defaultInput: PropertyInput = {
   propertyPrice: 2000,
@@ -175,6 +176,183 @@ function CfTooltip({ active, payload }: { active?:boolean; payload?:{value:numbe
   );
 }
 
+// ---- 保存セクション ----
+function SaveSection({
+  savedCount, onSave,
+}: { savedCount: number; onSave: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const [saved, setSaved] = useState(false);
+  const isFull = savedCount >= 10;
+
+  function handleSave() {
+    if (saved || isFull) return;
+    onSave(name);
+    setSaved(true);
+  }
+
+  return (
+    <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+      <h3 className="text-sm font-bold text-white mb-1">💾 この物件を保存する</h3>
+      <p className="text-xs text-slate-400 mb-4">
+        保存済み物件一覧で複数物件を比較できます（最大10件）
+      </p>
+      {saved ? (
+        <div className="flex items-center gap-3">
+          <div className="flex-1 bg-emerald-500/20 border border-emerald-400/40 rounded-xl px-4 py-3 text-emerald-300 text-sm font-semibold text-center">
+            ✓ 保存しました
+          </div>
+          <Link href="/saved"
+            className="px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 text-sm rounded-xl transition-colors whitespace-nowrap">
+            一覧を見る →
+          </Link>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text" placeholder="物件名（任意）例：渋谷区 1K マンション"
+            value={name} onChange={(e) => setName(e.target.value)}
+            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 outline-none focus:ring-2 focus:ring-blue-400/60"
+          />
+          <button onClick={handleSave} disabled={isFull}
+            className={`px-6 py-3 rounded-xl font-bold text-sm transition-colors whitespace-nowrap ${
+              isFull
+                ? "bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed"
+                : "bg-blue-500 hover:bg-blue-400 text-white shadow-lg shadow-blue-500/20"
+            }`}>
+            {isFull ? "保存上限（10件）" : "保存する"}
+          </button>
+        </div>
+      )}
+      <div className="mt-2 text-right">
+        <Link href="/saved" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+          保存済み物件を見る ({savedCount}件) →
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+// ---- 金利シミュレーション比較 ----
+function RateSimulation({ input }: { input: PropertyInput }) {
+  const base = input.loanRate;
+  const rates = [
+    Math.max(0.5, Math.round((base - 1.0) * 10) / 10),
+    Math.round(base * 10) / 10,
+    Math.round((base + 1.0) * 10) / 10,
+  ];
+
+  const results = rates.map((rate) => analyze({ ...input, loanRate: rate }));
+
+  return (
+    <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+      <h3 className="text-sm font-bold text-white mb-1">📉 金利シミュレーション比較</h3>
+      <p className="text-xs text-slate-400 mb-5">金利が変化した場合のCF・スコアを比較します</p>
+      <div className="grid grid-cols-3 gap-3">
+        {results.map((r, i) => {
+          const isActive = rates[i] === base;
+          const cfPlus = r.monthlyCashFlow >= 0;
+          return (
+            <div key={i} className={`rounded-xl border p-4 transition-all ${
+              isActive
+                ? "bg-blue-500/20 border-blue-400/50"
+                : "bg-white/5 border-white/10"
+            }`}>
+              <div className={`text-xs font-bold mb-3 ${isActive ? "text-blue-300" : "text-slate-400"}`}>
+                {isActive ? "▶ 現在" : `パターン${i + 1}`}
+              </div>
+              <div className={`text-xl font-bold mb-3 ${isActive ? "text-blue-300" : "text-white"}`}>
+                金利 {rates[i].toFixed(1)}%
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-xs text-slate-500">月間CF</div>
+                  <div className={`text-sm font-bold ${cfPlus ? "text-emerald-400" : "text-red-400"}`}>
+                    {cfPlus ? "+" : "−"}{new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(r.monthlyCashFlow)))}円
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">年間CF</div>
+                  <div className={`text-sm font-bold ${r.annualCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {r.annualCashFlow >= 0 ? "+" : "−"}{new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(r.annualCashFlow)))}円
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">総合スコア</div>
+                  <div className={`text-lg font-bold ${
+                    r.score >= 72 ? "text-emerald-400" :
+                    r.score >= 55 ? "text-blue-400" :
+                    r.score >= 38 ? "text-amber-400" : "text-red-400"
+                  }`}>{r.score}点</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ---- ローン期間シミュレーション比較 ----
+function YearsSimulation({ input }: { input: PropertyInput }) {
+  const base = input.loanYears;
+  const rawYears = [base - 10, base - 5, base].map((y) => Math.max(10, Math.min(35, y)));
+  // 重複除去
+  const years = Array.from(new Set(rawYears)).slice(-3);
+  while (years.length < 3) years.unshift(Math.max(10, years[0] - 5));
+
+  const results = years.map((y) => analyze({ ...input, loanYears: y }));
+
+  return (
+    <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+      <h3 className="text-sm font-bold text-white mb-1">📅 ローン期間シミュレーション比較</h3>
+      <p className="text-xs text-slate-400 mb-5">返済期間が変化した場合のCF・スコアを比較します</p>
+      <div className="grid grid-cols-3 gap-3">
+        {results.map((r, i) => {
+          const isActive = years[i] === base;
+          const cfPlus = r.monthlyCashFlow >= 0;
+          return (
+            <div key={i} className={`rounded-xl border p-4 transition-all ${
+              isActive
+                ? "bg-emerald-500/20 border-emerald-400/50"
+                : "bg-white/5 border-white/10"
+            }`}>
+              <div className={`text-xs font-bold mb-3 ${isActive ? "text-emerald-300" : "text-slate-400"}`}>
+                {isActive ? "▶ 現在" : `パターン${i + 1}`}
+              </div>
+              <div className={`text-xl font-bold mb-3 ${isActive ? "text-emerald-300" : "text-white"}`}>
+                {years[i]}年返済
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-xs text-slate-500">月間CF</div>
+                  <div className={`text-sm font-bold ${cfPlus ? "text-emerald-400" : "text-red-400"}`}>
+                    {cfPlus ? "+" : "−"}{new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(r.monthlyCashFlow)))}円
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">年間CF</div>
+                  <div className={`text-sm font-bold ${r.annualCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    {r.annualCashFlow >= 0 ? "+" : "−"}{new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(r.annualCashFlow)))}円
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">総合スコア</div>
+                  <div className={`text-lg font-bold ${
+                    r.score >= 72 ? "text-emerald-400" :
+                    r.score >= 55 ? "text-blue-400" :
+                    r.score >= 38 ? "text-amber-400" : "text-red-400"
+                  }`}>{r.score}点</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 // ---- シェアセクション ----
 function ShareSection({ result }: { result: AnalysisResult }) {
   const [copied, setCopied] = useState(false);
@@ -246,6 +424,7 @@ function ShareSection({ result }: { result: AnalysisResult }) {
 export default function AnalyzePage() {
   const [input, setInput] = useState<PropertyInput>(defaultInput);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const { add, count } = useSavedProperties();
 
   function set<K extends keyof PropertyInput>(key: K) {
     return (v: number) => setInput((prev) => ({ ...prev, [key]: v }));
@@ -289,9 +468,16 @@ export default function AnalyzePage() {
             <span className="text-2xl">🏠</span>
             <span className="font-bold text-white text-lg">不動産投資分析ツール</span>
           </Link>
-          <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 rounded-full px-3 py-1 text-blue-300 text-xs font-medium">
-            <span>✨</span><span className="hidden sm:inline">無料で分析</span>
-          </div>
+          <Link href="/saved"
+            className="inline-flex items-center gap-1.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-full px-3 py-1 text-slate-300 text-xs font-medium transition-colors">
+            <span>💾</span>
+            <span>保存済み物件</span>
+            {count > 0 && (
+              <span className="bg-blue-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                {count}
+              </span>
+            )}
+          </Link>
         </div>
       </header>
 
@@ -470,6 +656,17 @@ export default function AnalyzePage() {
                 ))}
               </ul>
             </section>
+
+            {/* 保存セクション */}
+            <SaveSection
+              savedCount={count}
+              onSave={(name) => add(name, input, result)}/>
+
+            {/* 金利シミュレーション */}
+            <RateSimulation input={input}/>
+
+            {/* ローン期間シミュレーション */}
+            <YearsSimulation input={input}/>
 
             {/* シェアセクション */}
             <ShareSection result={result}/>
