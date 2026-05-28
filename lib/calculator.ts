@@ -15,13 +15,20 @@ export interface AnalysisResult {
   monthlyLoanPayment: number; // 月間ローン返済額 (円)
   monthlyCashFlow: number;    // 月間CF (円)
   annualCashFlow: number;     // 年間CF (円)
+  // 内訳（月額）
+  monthlyRent: number;
+  monthlyExpenses: number;    // 管理費+修繕+税(月割)
+  // スコア
   score: number;              // 総合スコア (0-100)
-  verdict: "buy" | "consider" | "pass";
+  yieldScore: number;         // 利回りスコア
+  cashFlowScore: number;      // CFスコア
+  ltvScore: number;           // LTV安全性スコア
+  stabilityScore: number;     // 収益安定性スコア
+  verdict: "excellent" | "good" | "consider" | "pass";
   verdictLabel: string;
   comments: string[];
 }
 
-/** 元利均等返済の月額計算 */
 function calcMonthlyLoan(principal: number, annualRate: number, years: number): number {
   if (annualRate === 0) return principal / (years * 12);
   const r = annualRate / 100 / 12;
@@ -29,113 +36,91 @@ function calcMonthlyLoan(principal: number, annualRate: number, years: number): 
   return (principal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
 }
 
+function clamp(v: number) {
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
 export function analyze(input: PropertyInput): AnalysisResult {
   const priceYen = input.propertyPrice * 10000;
   const loanYen = input.loanAmount * 10000;
   const annualRent = input.monthlyRent * 12;
 
-  // 表面利回り
+  // 利回り
   const grossYield = priceYen > 0 ? (annualRent / priceYen) * 100 : 0;
-
-  // 年間経費
   const annualExpenses =
     (input.monthlyManagement + input.monthlyRepair) * 12 + input.annualTax;
-
-  // 実質利回り（(年間家賃 - 年間経費) / 物件価格）
   const netYield = priceYen > 0 ? ((annualRent - annualExpenses) / priceYen) * 100 : 0;
 
-  // 月間ローン返済
+  // ローン・CF
   const monthlyLoanPayment =
     loanYen > 0 && input.loanYears > 0
       ? calcMonthlyLoan(loanYen, input.loanRate, input.loanYears)
       : 0;
-
-  // 月間・年間CF
-  const monthlyCashFlow =
-    input.monthlyRent -
-    input.monthlyManagement -
-    input.monthlyRepair -
-    input.annualTax / 12 -
-    monthlyLoanPayment;
+  const monthlyExpenses =
+    input.monthlyManagement + input.monthlyRepair + input.annualTax / 12;
+  const monthlyCashFlow = input.monthlyRent - monthlyExpenses - monthlyLoanPayment;
   const annualCashFlow = monthlyCashFlow * 12;
 
-  // スコアリング（各項目を加点）
-  let score = 50; // ベース
+  const ltv = priceYen > 0 ? (loanYen / priceYen) * 100 : 0;
+
   const comments: string[] = [];
 
-  // 表面利回り評価
-  if (grossYield >= 10) {
-    score += 15;
-    comments.push("表面利回りが10%以上と高水準です。");
-  } else if (grossYield >= 7) {
-    score += 8;
-    comments.push("表面利回りは7%以上と良好な水準です。");
-  } else if (grossYield >= 5) {
-    score += 2;
-    comments.push("表面利回りは5%以上ですが、やや低めです。");
-  } else {
-    score -= 10;
-    comments.push("表面利回りが5%未満で収益性が低いです。");
-  }
+  // --- 利回りスコア（0-100）---
+  let yieldScore = 50;
+  if (grossYield >= 10) { yieldScore += 25; comments.push("表面利回りが10%以上と高水準です。"); }
+  else if (grossYield >= 7) { yieldScore += 12; comments.push("表面利回りは7%以上と良好な水準です。"); }
+  else if (grossYield >= 5) { yieldScore += 2; comments.push("表面利回りは5%台でやや低めです。"); }
+  else { yieldScore -= 15; comments.push("表面利回りが5%未満で収益性が低いです。"); }
 
-  // 実質利回り評価
-  if (netYield >= 7) {
-    score += 15;
-    comments.push("実質利回りが7%以上と優秀です。");
-  } else if (netYield >= 5) {
-    score += 8;
-    comments.push("実質利回りは5%以上と良好です。");
-  } else if (netYield >= 3) {
-    score += 2;
-    comments.push("実質利回りは3%台でやや控えめです。");
-  } else {
-    score -= 10;
-    comments.push("実質利回りが3%未満で費用が収益を圧迫しています。");
-  }
+  if (netYield >= 7) yieldScore += 25;
+  else if (netYield >= 5) yieldScore += 12;
+  else if (netYield >= 3) yieldScore += 2;
+  else yieldScore -= 15;
 
-  // キャッシュフロー評価
-  if (monthlyCashFlow >= 30000) {
-    score += 15;
-    comments.push("月間CFが3万円以上と余裕のある収支です。");
-  } else if (monthlyCashFlow >= 10000) {
-    score += 8;
-    comments.push("月間CFはプラスで安定しています。");
-  } else if (monthlyCashFlow >= 0) {
-    score += 2;
-    comments.push("月間CFはほぼトントンです。空室リスクに注意してください。");
-  } else {
-    score -= 15;
-    comments.push("月間CFがマイナスです。毎月持ち出しが発生します。");
-  }
+  yieldScore = clamp(yieldScore);
 
-  // LTV評価（借入比率）
-  const ltv = priceYen > 0 ? (loanYen / priceYen) * 100 : 0;
-  if (ltv <= 70) {
-    score += 5;
-    comments.push(`借入比率（LTV）は${ltv.toFixed(0)}%で健全な水準です。`);
-  } else if (ltv <= 90) {
-    comments.push(`借入比率（LTV）は${ltv.toFixed(0)}%です。やや高めに注意してください。`);
-  } else {
-    score -= 5;
-    comments.push(`借入比率（LTV）が${ltv.toFixed(0)}%と高く、財務リスクがあります。`);
-  }
+  // --- CFスコア（0-100）---
+  let cashFlowScore = 50;
+  if (monthlyCashFlow >= 50000) { cashFlowScore += 40; comments.push("月間CFが5万円以上と非常に余裕のある収支です。"); }
+  else if (monthlyCashFlow >= 30000) { cashFlowScore += 25; comments.push("月間CFが3万円以上と余裕のある収支です。"); }
+  else if (monthlyCashFlow >= 10000) { cashFlowScore += 12; comments.push("月間CFはプラスで安定しています。"); }
+  else if (monthlyCashFlow >= 0) { cashFlowScore += 2; comments.push("月間CFはほぼ収支トントンです。空室リスクに注意してください。"); }
+  else if (monthlyCashFlow >= -20000) { cashFlowScore -= 20; comments.push("月間CFがマイナスです。毎月持ち出しが発生します。"); }
+  else { cashFlowScore -= 40; comments.push("月間CFが大幅マイナスで財務的に危険な水準です。"); }
+  cashFlowScore = clamp(cashFlowScore);
 
-  // スコアをクランプ
-  score = Math.max(0, Math.min(100, Math.round(score)));
+  // --- LTV安全性スコア（0-100）---
+  let ltvScore = 70;
+  if (ltv <= 60) { ltvScore = 95; comments.push(`借入比率（LTV）${ltv.toFixed(0)}%で非常に健全です。`); }
+  else if (ltv <= 70) { ltvScore = 80; comments.push(`借入比率（LTV）${ltv.toFixed(0)}%で健全な水準です。`); }
+  else if (ltv <= 80) { ltvScore = 60; comments.push(`借入比率（LTV）${ltv.toFixed(0)}%です。やや高めに注意してください。`); }
+  else if (ltv <= 90) { ltvScore = 40; comments.push(`借入比率（LTV）${ltv.toFixed(0)}%と高く、リスクがあります。`); }
+  else { ltvScore = 15; comments.push(`借入比率（LTV）${ltv.toFixed(0)}%と非常に高く、財務リスクが大きいです。`); }
 
-  // 判定
-  let verdict: "buy" | "consider" | "pass";
+  // --- 収益安定性スコア（実質 vs 表面の差で経費比率を評価）---
+  const expenseRatio = annualRent > 0 ? (annualExpenses / annualRent) * 100 : 50;
+  let stabilityScore = 70;
+  if (expenseRatio <= 15) stabilityScore = 90;
+  else if (expenseRatio <= 25) stabilityScore = 75;
+  else if (expenseRatio <= 35) stabilityScore = 55;
+  else if (expenseRatio <= 50) stabilityScore = 35;
+  else stabilityScore = 20;
+
+  // 総合スコア（加重平均）
+  const score = clamp(
+    yieldScore * 0.30 +
+    cashFlowScore * 0.40 +
+    ltvScore * 0.20 +
+    stabilityScore * 0.10
+  );
+
+  // 4段階判定
+  let verdict: AnalysisResult["verdict"];
   let verdictLabel: string;
-  if (score >= 70) {
-    verdict = "buy";
-    verdictLabel = "買い推奨";
-  } else if (score >= 45) {
-    verdict = "consider";
-    verdictLabel = "要検討";
-  } else {
-    verdict = "pass";
-    verdictLabel = "見送り推奨";
-  }
+  if (score >= 72) { verdict = "excellent"; verdictLabel = "優良物件"; }
+  else if (score >= 55) { verdict = "good"; verdictLabel = "標準"; }
+  else if (score >= 38) { verdict = "consider"; verdictLabel = "要検討"; }
+  else { verdict = "pass"; verdictLabel = "見送り"; }
 
   return {
     grossYield,
@@ -143,7 +128,13 @@ export function analyze(input: PropertyInput): AnalysisResult {
     monthlyLoanPayment,
     monthlyCashFlow,
     annualCashFlow,
+    monthlyRent: input.monthlyRent,
+    monthlyExpenses,
     score,
+    yieldScore,
+    cashFlowScore,
+    ltvScore,
+    stabilityScore,
     verdict,
     verdictLabel,
     comments,

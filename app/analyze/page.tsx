@@ -1,6 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer,
+} from "recharts";
 import { analyze, type PropertyInput, type AnalysisResult } from "@/lib/calculator";
 
 const defaultInput: PropertyInput = {
@@ -14,108 +19,230 @@ const defaultInput: PropertyInput = {
   loanYears: 35,
 };
 
-function formatYen(value: number): string {
-  return new Intl.NumberFormat("ja-JP").format(Math.round(value));
+function formatYen(v: number) {
+  return new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(v)));
 }
 
-function ScoreGauge({ score }: { score: number }) {
-  const color =
-    score >= 70 ? "text-emerald-600" : score >= 45 ? "text-amber-500" : "text-red-500";
-  const bg =
-    score >= 70 ? "bg-emerald-500" : score >= 45 ? "bg-amber-400" : "bg-red-500";
-
+// ---- 円形ゲージ ----
+function CircularGauge({ score }: { score: number }) {
+  const r = 72; const cx = 92; const cy = 92;
+  const circumference = Math.PI * r;
+  const offset = circumference * (1 - score / 100);
+  const color  = score >= 72 ? "#10b981" : score >= 55 ? "#3b82f6" : score >= 38 ? "#f59e0b" : "#ef4444";
+  const lcolor = score >= 72 ? "text-emerald-400" : score >= 55 ? "text-blue-400" : score >= 38 ? "text-amber-400" : "text-red-400";
+  const rank   = score >= 72 ? "優良" : score >= 55 ? "標準" : score >= 38 ? "要検討" : "見送り";
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className={`text-6xl font-bold ${color}`}>{score}</div>
-      <div className="text-sm text-gray-500">/ 100点</div>
-      <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ${bg}`}
-          style={{ width: `${score}%` }}
-        />
+    <div className="flex flex-col items-center">
+      <svg width="184" height="112" viewBox="0 0 184 112">
+        <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="14" strokeLinecap="round"/>
+        <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke={color} strokeWidth="14" strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition:"stroke-dashoffset 0.9s ease" }}/>
+      </svg>
+      <div className="-mt-10 text-center">
+        <div className="text-6xl font-bold text-white">{score}</div>
+        <div className="text-sm text-slate-400 mt-0.5">/ 100点</div>
+        <div className={`text-sm font-bold mt-1 ${lcolor}`}>{rank}</div>
       </div>
     </div>
   );
 }
 
+// ---- 判定バッジ ----
+const verdictConfig = {
+  excellent: { bg:"bg-emerald-500/20", border:"border-emerald-400/40", text:"text-emerald-300", icon:"🏆", desc:"優秀な投資候補です" },
+  good:      { bg:"bg-blue-500/20",    border:"border-blue-400/40",    text:"text-blue-300",    icon:"✅", desc:"バランスのよい物件です" },
+  consider:  { bg:"bg-amber-500/20",   border:"border-amber-400/40",   text:"text-amber-300",   icon:"⚠️", desc:"慎重な検討が必要です" },
+  pass:      { bg:"bg-red-500/20",     border:"border-red-400/40",     text:"text-red-300",     icon:"❌", desc:"リスクが高い水準です" },
+};
 function VerdictBadge({ verdict, label }: { verdict: AnalysisResult["verdict"]; label: string }) {
-  const styles = {
-    buy: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    consider: "bg-amber-100 text-amber-800 border-amber-300",
-    pass: "bg-red-100 text-red-800 border-red-300",
-  };
-  const icons = { buy: "✅", consider: "⚠️", pass: "❌" };
-
+  const c = verdictConfig[verdict];
   return (
-    <div
-      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-lg font-bold ${styles[verdict]}`}
-    >
-      <span>{icons[verdict]}</span>
-      <span>{label}</span>
+    <div className={`inline-flex flex-col items-center gap-1 px-6 py-3 rounded-2xl border ${c.bg} ${c.border}`}>
+      <div className={`flex items-center gap-2 text-xl font-bold ${c.text}`}><span>{c.icon}</span><span>{label}</span></div>
+      <div className={`text-xs ${c.text} opacity-80`}>{c.desc}</div>
     </div>
   );
 }
 
-interface InputFieldProps {
-  label: string;
-  unit: string;
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-  min?: number;
-  hint?: string;
+// ---- テキスト入力フィールド ----
+interface InputFieldProps { label:string; unit:string; value:number; onChange:(v:number)=>void; step?:number; min?:number; hint?:string; }
+function InputField({ label, unit, value, onChange, step=1, min=0, hint }: InputFieldProps) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-slate-300">{label}{hint && <span className="ml-1 text-xs text-slate-500">（{hint}）</span>}</label>
+      <div className="flex items-center bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-400/60 transition-all">
+        <input type="number" value={value} min={min} step={step} onChange={(e)=>onChange(Number(e.target.value))}
+          className="flex-1 px-4 py-2.5 text-right text-white bg-transparent outline-none text-base"/>
+        <span className="px-3 py-2.5 text-slate-400 text-sm border-l border-white/10 whitespace-nowrap bg-white/5">{unit}</span>
+      </div>
+    </div>
+  );
 }
 
-function InputField({ label, unit, value, onChange, step = 1, min = 0, hint }: InputFieldProps) {
+// ---- スライダーフィールド ----
+interface SliderFieldProps { label:string; unit:string; value:number; onChange:(v:number)=>void; min:number; max:number; step:number; }
+function SliderField({ label, unit, value, onChange, min, max, step }: SliderFieldProps) {
+  const pct = ((value - min) / (max - min)) * 100;
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-gray-700">
-        {label}
-        {hint && <span className="ml-1 text-xs text-gray-400">（{hint}）</span>}
-      </label>
-      <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-400">
-        <input
-          type="number"
-          value={value}
-          min={min}
-          step={step}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1 px-3 py-2 text-right text-gray-900 bg-white outline-none"
-        />
-        <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm border-l border-gray-300 whitespace-nowrap">
-          {unit}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-slate-300">{label}</label>
+        <span className="text-base font-bold text-white bg-white/10 border border-white/10 rounded-lg px-3 py-0.5 min-w-[72px] text-center">
+          {value}{unit}
         </span>
       </div>
-    </div>
-  );
-}
-
-function ResultCard({
-  label,
-  value,
-  sub,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-xl p-4 border ${
-        highlight ? "bg-blue-50 border-blue-200" : "bg-white border-gray-200"
-      }`}
-    >
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className={`text-xl font-bold ${highlight ? "text-blue-700" : "text-gray-800"}`}>
-        {value}
+      <div className="relative flex items-center h-6">
+        {/* トラック背景 */}
+        <div className="absolute w-full h-1.5 rounded-full bg-white/10"/>
+        {/* 塗り部分 */}
+        <div className="absolute h-1.5 rounded-full bg-blue-400" style={{ width:`${pct}%` }}/>
+        <input type="range" min={min} max={max} step={step} value={value}
+          onChange={(e)=>onChange(Number(e.target.value))}
+          className="relative w-full appearance-none bg-transparent cursor-pointer
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
+            [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white
+            [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-400
+            [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:rounded-full
+            [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-blue-400
+            [&::-moz-range-thumb]:cursor-pointer"/>
       </div>
-      {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+      <div className="flex justify-between text-xs text-slate-600">
+        <span>{min}{unit}</span><span>{max}{unit}</span>
+      </div>
     </div>
   );
 }
 
+// ---- プリセットボタン群 ----
+function PresetGroup({ label, options, onSelect }: { label:string; options:{label:string; value:number}[]; onSelect:(v:number)=>void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs text-slate-400">{label}</span>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => (
+          <button key={o.label} onClick={()=>onSelect(o.value)}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-white/10 bg-white/5 text-slate-300
+              hover:bg-blue-500/30 hover:border-blue-400/50 hover:text-blue-300 transition-all">
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---- ダークサマリーカード ----
+function DarkCard({ label, value, sub, color="text-white" }: { label:string; value:string; sub?:string; color?:string }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+      <div className="text-xs text-slate-400 mb-1">{label}</div>
+      <div className={`text-xl font-bold ${color}`}>{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+// ---- スコアカード（ライト） ----
+function ScoreCard({ title, score, comment }: { title:string; score:number; comment:string }) {
+  const c = score >= 75 ? { bar:"bg-emerald-500", text:"text-emerald-700", bg:"bg-emerald-50 border-emerald-200", lbl:"優秀" }
+          : score >= 55 ? { bar:"bg-blue-500",    text:"text-blue-700",    bg:"bg-blue-50 border-blue-200",    lbl:"良好" }
+          : score >= 35 ? { bar:"bg-amber-400",   text:"text-amber-700",   bg:"bg-amber-50 border-amber-200",  lbl:"普通" }
+          :               { bar:"bg-red-400",     text:"text-red-700",     bg:"bg-red-50 border-red-200",      lbl:"低水準" };
+  return (
+    <div className={`rounded-2xl border p-5 ${c.bg}`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-700">{title}</span>
+        <span className={`text-2xl font-bold ${c.text}`}>{score}<span className="text-sm font-normal text-gray-400 ml-0.5">点</span></span>
+      </div>
+      <div className="w-full h-2.5 bg-white/70 rounded-full overflow-hidden mb-2">
+        <div className={`h-full rounded-full ${c.bar}`} style={{ width:`${score}%`, transition:"width 0.7s ease" }}/>
+      </div>
+      <div className={`text-xs font-semibold mb-2 ${c.text}`}>{c.lbl}</div>
+      <p className="text-xs text-gray-600 leading-relaxed">{comment}</p>
+    </div>
+  );
+}
+
+// ---- CF棒グラフ ツールチップ ----
+function CfTooltip({ active, payload }: { active?:boolean; payload?:{value:number; name:string}[] }) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  return (
+    <div className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 shadow text-sm">
+      <div className="font-semibold text-slate-200">{item.name}</div>
+      <div className="text-white">{item.value >= 0 ? "+" : "−"}{formatYen(item.value)}円</div>
+    </div>
+  );
+}
+
+// ---- シェアセクション ----
+function ShareSection({ result }: { result: AnalysisResult }) {
+  const [copied, setCopied] = useState(false);
+
+  const cfSign = result.monthlyCashFlow >= 0 ? "+" : "−";
+  const cfVal  = formatYen(result.monthlyCashFlow);
+  const shareText =
+    `不動産物件を分析しました！\n` +
+    `表面利回り ${result.grossYield.toFixed(1)}% / 月間CF ${cfSign}${cfVal}円 / 総合スコア ${result.score}点\n` +
+    `判定：${result.verdictLabel}\n` +
+    `#不動産投資 #資産形成 #不動産分析ツール`;
+
+  function handleXShare() {
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(shareText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+      <h3 className="text-sm font-bold text-white mb-1">📣 結果をシェアする</h3>
+      <p className="text-xs text-slate-400 mb-4">分析結果をSNSでシェアしましょう</p>
+
+      {/* プレビュー */}
+      <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-4 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
+        {shareText}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        {/* X（Twitter）シェアボタン */}
+        <button onClick={handleXShare}
+          className="flex-1 flex items-center justify-center gap-2 bg-black hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition-colors border border-white/10">
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+          <span>X（旧Twitter）でシェア</span>
+        </button>
+
+        {/* コピーボタン */}
+        <button onClick={handleCopy}
+          className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 rounded-xl transition-all border ${
+            copied
+              ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-300"
+              : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
+          }`}>
+          {copied ? (
+            <><span>✓</span><span>コピーしました！</span></>
+          ) : (
+            <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              <span>テキストをコピー</span>
+            </>
+          )}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ---- メインページ ----
 export default function AnalyzePage() {
   const [input, setInput] = useState<PropertyInput>(defaultInput);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -124,192 +251,241 @@ export default function AnalyzePage() {
     return (v: number) => setInput((prev) => ({ ...prev, [key]: v }));
   }
 
+  // 頭金割合から借入額を自動計算
+  function applyDownPayment(ratio: number) {
+    const loan = Math.round(input.propertyPrice * (1 - ratio) / 10) * 10;
+    setInput((prev) => ({ ...prev, loanAmount: Math.max(0, loan) }));
+  }
+
   function handleAnalyze() {
     setResult(analyze(input));
-    // スクロール
-    setTimeout(() => {
-      document.getElementById("result")?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
+    setTimeout(() => document.getElementById("result")?.scrollIntoView({ behavior:"smooth" }), 100);
   }
+  function handleReset() { setInput(defaultInput); setResult(null); }
 
-  function handleReset() {
-    setInput(defaultInput);
-    setResult(null);
-  }
+  const radarData = result ? [
+    { subject:"利回り",    value: result.yieldScore },
+    { subject:"CF",        value: result.cashFlowScore },
+    { subject:"LTV安全性", value: result.ltvScore },
+    { subject:"安定性",    value: result.stabilityScore },
+  ] : [];
 
+  const cfData = result ? [
+    { name:"家賃収入",     value: result.monthlyRent,           color:"#10b981" },
+    { name:"ローン返済",   value: -result.monthlyLoanPayment,   color:"#ef4444" },
+    { name:"諸経費",       value: -result.monthlyExpenses,      color:"#f59e0b" },
+    { name:"手残り（CF）", value: result.monthlyCashFlow,       color: result.monthlyCashFlow >= 0 ? "#60a5fa" : "#ef4444" },
+  ] : [];
+
+  const ltvPct = input.loanAmount > 0 ? ((input.loanAmount / input.propertyPrice) * 100).toFixed(0) : "0";
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
+
       {/* ヘッダー */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">🏠 不動産投資分析ツール</h1>
-            <p className="text-xs text-gray-500">物件情報を入力してAI判定を受けましょう</p>
+      <header className="border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <span className="text-2xl">🏠</span>
+            <span className="font-bold text-white text-lg">不動産投資分析ツール</span>
+          </Link>
+          <div className="inline-flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 rounded-full px-3 py-1 text-blue-300 text-xs font-medium">
+            <span>✨</span><span className="hidden sm:inline">無料で分析</span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        {/* 入力フォーム */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-          <h2 className="text-base font-bold text-gray-800 mb-4 pb-2 border-b border-gray-100">
-            📋 物件情報を入力
-          </h2>
+      <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
 
-          <div className="space-y-5">
-            <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                物件基本情報
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField
-                  label="物件価格"
-                  unit="万円"
-                  value={input.propertyPrice}
-                  onChange={set("propertyPrice")}
-                  step={10}
-                />
-                <InputField
-                  label="想定家賃収入（月額）"
-                  unit="円"
-                  value={input.monthlyRent}
-                  onChange={set("monthlyRent")}
-                  step={1000}
-                />
-              </div>
+        {/* タイトル */}
+        <div className="text-center pt-2 pb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">物件分析</h1>
+          <p className="text-slate-400 text-sm">物件情報を入力して、利回り・CF・スコアを確認しましょう</p>
+        </div>
+
+        {/* ---- 入力フォーム ---- */}
+        <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm space-y-6">
+
+          {/* 物件基本情報 */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-1 h-5 bg-blue-400 rounded-full"/>
+              <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wide">物件基本情報</h2>
             </div>
-
-            <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                毎月の経費
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField
-                  label="管理費"
-                  unit="円/月"
-                  value={input.monthlyManagement}
-                  onChange={set("monthlyManagement")}
-                  step={500}
-                />
-                <InputField
-                  label="修繕積立金"
-                  unit="円/月"
-                  value={input.monthlyRepair}
-                  onChange={set("monthlyRepair")}
-                  step={500}
-                />
-                <InputField
-                  label="固定資産税"
-                  unit="円/年"
-                  value={input.annualTax}
-                  onChange={set("annualTax")}
-                  step={10000}
-                  hint="年額"
-                />
+            <div className="space-y-4">
+              {/* 物件価格 + プリセット */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <InputField label="物件価格" unit="万円" value={input.propertyPrice} onChange={set("propertyPrice")} step={10}/>
+                <InputField label="想定家賃収入（月額）" unit="円" value={input.monthlyRent} onChange={set("monthlyRent")} step={1000}/>
               </div>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                ローン条件
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <InputField
-                  label="借入額"
-                  unit="万円"
-                  value={input.loanAmount}
-                  onChange={set("loanAmount")}
-                  step={10}
-                />
-                <InputField
-                  label="金利"
-                  unit="%"
-                  value={input.loanRate}
-                  onChange={set("loanRate")}
-                  step={0.1}
-                />
-                <InputField
-                  label="借入期間"
-                  unit="年"
-                  value={input.loanYears}
-                  onChange={set("loanYears")}
-                  step={1}
-                  min={1}
-                />
-              </div>
+              <PresetGroup label="物件価格プリセット"
+                options={[{label:"500万",value:500},{label:"1,000万",value:1000},{label:"2,000万",value:2000},{label:"3,000万",value:3000}]}
+                onSelect={(v) => setInput((p) => ({ ...p, propertyPrice:v }))}/>
             </div>
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              onClick={handleAnalyze}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-3 rounded-xl transition-colors"
-            >
+          <div className="border-t border-white/10"/>
+
+          {/* 毎月の経費 */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-1 h-5 bg-amber-400 rounded-full"/>
+              <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wide">毎月の経費</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField label="管理費" unit="円/月" value={input.monthlyManagement} onChange={set("monthlyManagement")} step={500}/>
+              <InputField label="修繕積立金" unit="円/月" value={input.monthlyRepair} onChange={set("monthlyRepair")} step={500}/>
+              <InputField label="固定資産税" unit="円/年" value={input.annualTax} onChange={set("annualTax")} step={10000} hint="年額"/>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10"/>
+
+          {/* ローン条件 */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-1 h-5 bg-emerald-400 rounded-full"/>
+              <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wide">ローン条件</h2>
+            </div>
+            <div className="space-y-5">
+              {/* 借入額 + 頭金プリセット */}
+              <div>
+                <InputField label="借入額" unit="万円" value={input.loanAmount} onChange={set("loanAmount")} step={10}/>
+                <div className="mt-3">
+                  <PresetGroup label="頭金割合から自動計算"
+                    options={[
+                      {label:"フルローン", value:0},
+                      {label:"10%頭金",   value:0.1},
+                      {label:"20%頭金",   value:0.2},
+                      {label:"30%頭金",   value:0.3},
+                    ]}
+                    onSelect={applyDownPayment}/>
+                </div>
+              </div>
+              {/* 金利スライダー */}
+              <SliderField label="金利" unit="%" value={input.loanRate} onChange={set("loanRate")} min={0.5} max={5.0} step={0.1}/>
+              {/* ローン期間スライダー */}
+              <SliderField label="ローン期間" unit="年" value={input.loanYears} onChange={set("loanYears")} min={10} max={35} step={5}/>
+            </div>
+          </div>
+
+          {/* ボタン */}
+          <div className="flex gap-3 pt-2">
+            <button onClick={handleAnalyze}
+              className="flex-1 bg-blue-500 hover:bg-blue-400 active:bg-blue-600 text-white font-bold py-3.5 rounded-xl transition-colors text-base shadow-lg shadow-blue-500/20">
               📊 分析する
             </button>
-            <button
-              onClick={handleReset}
-              className="px-4 py-3 border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors text-sm"
-            >
+            <button onClick={handleReset}
+              className="px-5 py-3.5 border border-white/20 text-slate-300 hover:bg-white/10 rounded-xl transition-colors text-sm">
               リセット
             </button>
           </div>
         </section>
 
-        {/* 分析結果 */}
+        {/* ---- 分析結果 ---- */}
         {result && (
-          <section id="result" className="space-y-4">
-            {/* 総合判定 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 text-center space-y-4">
-              <h2 className="text-base font-bold text-gray-800">📈 分析結果</h2>
-              <ScoreGauge score={result.score} />
-              <VerdictBadge verdict={result.verdict} label={result.verdictLabel} />
-            </div>
+          <div id="result" className="space-y-6">
 
-            {/* 数値サマリー */}
-            <div className="grid grid-cols-2 gap-3">
-              <ResultCard
-                label="表面利回り"
-                value={`${result.grossYield.toFixed(2)}%`}
-              />
-              <ResultCard
-                label="実質利回り"
-                value={`${result.netYield.toFixed(2)}%`}
-              />
-              <ResultCard
-                label="月間キャッシュフロー"
-                value={`${result.monthlyCashFlow >= 0 ? "+" : ""}${formatYen(result.monthlyCashFlow)}円`}
-                sub={`年間: ${result.annualCashFlow >= 0 ? "+" : ""}${formatYen(result.annualCashFlow)}円`}
-                highlight
-              />
-              <ResultCard
-                label="月間ローン返済"
-                value={`${formatYen(result.monthlyLoanPayment)}円`}
-                sub="元利均等"
-              />
-            </div>
+            {/* 総合スコア */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+              <h2 className="text-base font-bold text-white mb-6 text-center">総合スコア</h2>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-8">
+                <CircularGauge score={result.score}/>
+                <div className="flex flex-col items-center gap-4">
+                  <VerdictBadge verdict={result.verdict} label={result.verdictLabel}/>
+                  <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
+                    <DarkCard label="表面利回り" value={`${result.grossYield.toFixed(2)}%`} color="text-emerald-400"/>
+                    <DarkCard label="実質利回り" value={`${result.netYield.toFixed(2)}%`} color="text-blue-400"/>
+                    <div className="col-span-2">
+                      <DarkCard
+                        label="月間キャッシュフロー"
+                        value={`${result.monthlyCashFlow >= 0 ? "+" : "−"}${formatYen(result.monthlyCashFlow)}円`}
+                        sub={`年間: ${result.annualCashFlow >= 0 ? "+" : "−"}${formatYen(result.annualCashFlow)}円`}
+                        color={result.monthlyCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}/>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-            {/* コメント */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-              <h3 className="text-sm font-bold text-gray-700 mb-3">🔍 詳細コメント</h3>
-              <ul className="space-y-2">
+            {/* レーダーチャート */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+              <h3 className="text-sm font-bold text-white mb-5">📡 4指標レーダーチャート</h3>
+              <ResponsiveContainer width="100%" height={320}>
+                <RadarChart data={radarData} margin={{ top:20, right:40, bottom:20, left:40 }}>
+                  <PolarGrid stroke="rgba(255,255,255,0.1)"/>
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize:13, fill:"#94a3b8", fontWeight:600 }}/>
+                  <Radar name="スコア" dataKey="value" stroke="#60a5fa" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2.5}/>
+                </RadarChart>
+              </ResponsiveContainer>
+            </section>
+
+            {/* CF内訳棒グラフ */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+              <h3 className="text-sm font-bold text-white mb-5">💰 月間キャッシュフロー内訳</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={cfData} margin={{ top:5, right:10, left:10, bottom:5 }}>
+                  <XAxis dataKey="name" tick={{ fontSize:11, fill:"#94a3b8" }} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{ fontSize:10, fill:"#64748b" }} axisLine={false} tickLine={false}
+                    tickFormatter={(v) => `${v>=0?"+":""}${Math.round(v/1000)}k`}/>
+                  <Tooltip content={<CfTooltip/>} cursor={{ fill:"rgba(255,255,255,0.05)" }}/>
+                  <Bar dataKey="value" radius={[6,6,0,0]}>
+                    {cfData.map((entry, i) => <Cell key={i} fill={entry.color}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="grid grid-cols-2 gap-2 mt-4">
+                {cfData.map((d) => (
+                  <div key={d.name} className="flex items-center gap-2 text-xs text-slate-400">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor:d.color }}/>
+                    <span>{d.name}：{d.value>=0?"+":"−"}{formatYen(d.value)}円</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* 4指標スコアカード */}
+            <section>
+              <h3 className="text-sm font-bold text-slate-200 mb-3 px-1">📈 各指標スコア</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <ScoreCard title="利回りスコア" score={result.yieldScore}
+                  comment={`表面利回り${result.grossYield.toFixed(1)}%・実質利回り${result.netYield.toFixed(1)}%をもとに評価。7%以上が良好な水準です。`}/>
+                <ScoreCard title="キャッシュフロースコア" score={result.cashFlowScore}
+                  comment={`月間手残りが${result.monthlyCashFlow>=0?"+":""}${formatYen(result.monthlyCashFlow)}円。毎月のプラスCFが多いほど高評価です。`}/>
+                <ScoreCard title="LTV安全性スコア" score={result.ltvScore}
+                  comment={`借入比率${ltvPct}%。70%以下が健全な水準とされています。自己資金比率が高いほど安全です。`}/>
+                <ScoreCard title="収益安定性スコア" score={result.stabilityScore}
+                  comment="経費が収入に占める割合をもとに評価。比率が低いほど安定した収益構造です。"/>
+              </div>
+            </section>
+
+            {/* 詳細コメント */}
+            <section className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+              <h3 className="text-sm font-bold text-white mb-4">🔍 詳細コメント</h3>
+              <ul className="space-y-2.5">
                 {result.comments.map((c, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                    <span className="mt-0.5 text-blue-400 flex-shrink-0">•</span>
-                    <span>{c}</span>
+                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-300">
+                    <span className="mt-0.5 text-blue-400 flex-shrink-0">•</span><span>{c}</span>
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
 
-            {/* 注意書き */}
-            <p className="text-xs text-gray-400 text-center px-2">
-              ※ この分析は概算です。実際の投資判断は専門家にご相談ください。
-            </p>
-          </section>
+            {/* シェアセクション */}
+            <ShareSection result={result}/>
+          </div>
         )}
       </main>
+
+      {/* フッター */}
+      <footer className="border-t border-white/10 bg-white/5 mt-8">
+        <div className="max-w-5xl mx-auto px-4 py-8 text-center space-y-2">
+          <p className="text-xs text-slate-500 leading-relaxed max-w-2xl mx-auto">
+            ⚠️ 本ツールは情報提供のみを目的としており、投資助言ではありません。表示される分析結果は参考情報であり、投資の成果を保証するものではありません。投資判断はご自身の責任において、必要に応じて専門家にご相談のうえ行ってください。
+          </p>
+          <p className="text-xs text-slate-700">© 2024 不動産投資分析ツール</p>
+        </div>
+      </footer>
     </div>
   );
 }
