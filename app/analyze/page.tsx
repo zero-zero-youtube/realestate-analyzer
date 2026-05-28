@@ -11,6 +11,7 @@ import { useSavedProperties } from "@/lib/useSavedProperties";
 import Header from "@/components/Header";
 import { useAuth, getDailyUsage, incrementDailyUsage, isLimitReached } from "@/lib/useAuth";
 import { useAnalyses } from "@/lib/useAnalyses";
+import { trackAnalyzeProperty, trackSaveProperty, trackShareResult } from "@/lib/gtag";
 
 const defaultInput: PropertyInput = {
   propertyPrice: 2000,
@@ -503,12 +504,14 @@ function ShareSection({ result }: { result: AnalysisResult }) {
     `#不動産投資 #資産形成 #不動産分析ツール`;
 
   function handleXShare() {
+    trackShareResult({ method: "twitter", score: result.score });
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function handleCopy() {
     navigator.clipboard.writeText(shareText).then(() => {
+      trackShareResult({ method: "copy", score: result.score });
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -591,6 +594,7 @@ export default function AnalyzePage() {
     }
     const r = analyze(input);
     setResult(r);
+    trackAnalyzeProperty({ property_price: input.propertyPrice, gross_yield: r.grossYield, score: r.score });
     if (!user) {
       incrementDailyUsage();
       const { count: c } = getDailyUsage();
@@ -824,10 +828,9 @@ export default function AnalyzePage() {
             <SaveSection
               savedCount={count}
               onSave={async (name) => {
-                // localStorageに保存（従来）
                 add(name, input, result);
-                // ログイン済みならDBにも保存
                 if (user) await saveToDb(name, input, result);
+                trackSaveProperty({ property_name: name || "無題の物件", score: result.score });
               }}/>
 
             {/* 金利シミュレーション */}
