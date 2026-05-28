@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Header from "@/components/Header";
 
 const features = [
   {
@@ -27,21 +28,7 @@ const steps = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* ナビ */}
-      <header className="border-b border-gray-100">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🏠</span>
-            <span className="font-bold text-gray-900 text-lg">不動産投資分析ツール</span>
-          </div>
-          <Link
-            href="/analyze"
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-          >
-            分析を始める
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-1">
         {/* ヒーロー */}

@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { analyze, type PropertyInput, type AnalysisResult } from "@/lib/calculator";
 import { useSavedProperties } from "@/lib/useSavedProperties";
+import Header from "@/components/Header";
 
 const defaultInput: PropertyInput = {
   propertyPrice: 2000,
@@ -595,25 +596,7 @@ export default function AnalyzePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
 
-      {/* ヘッダー */}
-      <header className="border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <span className="text-2xl">🏠</span>
-            <span className="font-bold text-white text-lg">不動産投資分析ツール</span>
-          </Link>
-          <Link href="/saved"
-            className="inline-flex items-center gap-1.5 bg-white/5 border border-white/10 hover:bg-white/10 rounded-full px-3 py-1 text-slate-300 text-xs font-medium transition-colors">
-            <span>💾</span>
-            <span>保存済み物件</span>
-            {count > 0 && (
-              <span className="bg-blue-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                {count}
-              </span>
-            )}
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
 

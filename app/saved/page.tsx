@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useSavedProperties } from "@/lib/useSavedProperties";
+import Header from "@/components/Header";
 
 function formatYen(v: number) {
   return new Intl.NumberFormat("ja-JP").format(Math.round(Math.abs(v)));
@@ -30,20 +31,7 @@ export default function SavedPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col">
-
-      {/* ヘッダー */}
-      <header className="border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <span className="text-2xl">🏠</span>
-            <span className="font-bold text-white text-lg">不動産投資分析ツール</span>
-          </Link>
-          <Link href="/analyze"
-            className="bg-blue-500/20 border border-blue-400/30 hover:bg-blue-500/30 text-blue-300 text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-            ＋ 新しい物件を分析
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
 
@@ -57,14 +45,21 @@ export default function SavedPage() {
 
         {/* 空状態 */}
         {items.length === 0 && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center">
-            <div className="text-5xl mb-4">🏠</div>
-            <p className="text-slate-300 font-semibold mb-2">まだ物件が保存されていません</p>
-            <p className="text-slate-500 text-sm mb-6">分析結果の「この物件を保存する」ボタンから保存できます</p>
+          <div className="bg-white/5 border border-white/10 rounded-2xl px-8 py-16 text-center">
+            <div className="w-20 h-20 bg-blue-500/10 border border-blue-400/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl">🏠</span>
+            </div>
+            <h2 className="text-xl font-bold text-white mb-3">まだ物件が保存されていません</h2>
+            <p className="text-slate-400 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+              気になる物件を分析して保存しましょう。<br />
+              複数の物件を比較検討できます。
+            </p>
             <Link href="/analyze"
-              className="inline-block bg-blue-500 hover:bg-blue-400 text-white font-bold px-6 py-3 rounded-xl transition-colors">
-              物件を分析する
+              className="inline-flex items-center gap-2 bg-blue-500 hover:bg-blue-400 text-white font-bold px-8 py-3.5 rounded-xl transition-colors shadow-lg shadow-blue-500/30">
+              <span>📊</span>
+              <span>最初の物件を分析する</span>
             </Link>
+            <p className="text-slate-600 text-xs mt-4">無料・登録不要</p>
           </div>
         )}
 
@@ -118,16 +113,14 @@ export default function SavedPage() {
                         <span className="text-xs text-slate-400">スコア</span>
                         <span className={`text-xl font-bold ${vc.text}`}>{p.result.score}点</span>
                       </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleRemove(p.id)}
-                          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                            confirmId === p.id
-                              ? "bg-red-500/20 border-red-400/40 text-red-300"
-                              : "border-white/10 text-slate-400 hover:border-red-400/40 hover:text-red-400"
-                          }`}>
-                          {confirmId === p.id ? "本当に削除？" : "削除"}
-                        </button>
-                      </div>
+                      <button onClick={() => handleRemove(p.id)}
+                        className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                          confirmId === p.id
+                            ? "bg-red-500/20 border-red-400/40 text-red-300"
+                            : "border-white/10 text-slate-400 hover:border-red-400/40 hover:text-red-400"
+                        }`}>
+                        {confirmId === p.id ? "本当に削除？" : "削除"}
+                      </button>
                     </div>
                   </div>
 
@@ -187,7 +180,6 @@ export default function SavedPage() {
         )}
       </main>
 
-      {/* フッター */}
       <footer className="border-t border-white/10 bg-white/5 mt-8">
         <div className="max-w-5xl mx-auto px-4 py-6 text-center">
           <p className="text-xs text-slate-600">
